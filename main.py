@@ -1,9 +1,13 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from typing import List
+import random
+import string
 
 import models
 import schemas
+
 from database import engine, SessionLocal
 
 
@@ -17,26 +21,16 @@ app = FastAPI(
 )
 
 
-# =========================
-# CORS
-# =========================
-
+# Autoriser le frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "https://ton-site-vercel.vercel.app"
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-
-# =========================
-# DATABASE
-# =========================
 
 def get_db():
 
@@ -50,9 +44,16 @@ def get_db():
 
 
 
-# =========================
-# TEST API
-# =========================
+def generer_numero_suivi():
+
+    return "TYC-" + ''.join(
+        random.choices(
+            string.digits,
+            k=10
+        )
+    )
+
+
 
 @app.get("/")
 def accueil():
@@ -67,13 +68,21 @@ def accueil():
 # AJOUTER UN COLIS
 # =========================
 
-@app.post("/colis", response_model=schemas.ColisResponse)
+@app.post(
+    "/colis",
+    response_model=schemas.ColisResponse
+)
 def ajouter_colis(
     colis: schemas.ColisCreate,
     db: Session = Depends(get_db)
 ):
 
+    numero = generer_numero_suivi()
+
+
     nouveau_colis = models.Colis(
+
+        numero_suivi=numero,
 
         client=colis.client,
 
@@ -101,18 +110,23 @@ def ajouter_colis(
 
 
 
+
+
 # =========================
-# LISTE COLIS
+# LISTE DES COLIS
 # =========================
 
-@app.get("/colis")
+@app.get(
+    "/colis",
+    response_model=List[schemas.ColisResponse]
+)
 def liste_colis(
     db: Session = Depends(get_db)
 ):
 
-    colis = db.query(models.Colis).all()
+    return db.query(models.Colis).all()
 
-    return colis
+
 
 
 
@@ -120,18 +134,23 @@ def liste_colis(
 # SUIVI COLIS
 # =========================
 
-@app.get("/suivi/{numero_suivi}")
-def suivi_colis(
+@app.get(
+    "/suivi/{numero_suivi}",
+    response_model=schemas.ColisResponse
+)
+def suivre_colis(
     numero_suivi: str,
     db: Session = Depends(get_db)
 ):
+
 
     colis = db.query(models.Colis).filter(
         models.Colis.numero_suivi == numero_suivi
     ).first()
 
 
-    if not colis:
+
+    if colis is None:
 
         raise HTTPException(
             status_code=404,
@@ -143,23 +162,28 @@ def suivi_colis(
 
 
 
+
+
 # =========================
-# MODIFIER STATUT
+# SUPPRIMER UN COLIS
 # =========================
 
-@app.put("/colis/{numero_suivi}")
-def modifier_statut(
+@app.delete(
+    "/colis/{numero_suivi}"
+)
+def supprimer_colis(
     numero_suivi: str,
-    statut: str,
     db: Session = Depends(get_db)
 ):
+
 
     colis = db.query(models.Colis).filter(
         models.Colis.numero_suivi == numero_suivi
     ).first()
 
 
-    if not colis:
+
+    if colis is None:
 
         raise HTTPException(
             status_code=404,
@@ -167,11 +191,13 @@ def modifier_statut(
         )
 
 
-    colis.statut = statut
+
+    db.delete(colis)
 
     db.commit()
 
-    db.refresh(colis)
 
 
-    return colis
+    return {
+        "message": "Colis supprimé avec succès"
+    }
