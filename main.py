@@ -15,7 +15,8 @@ models.Base.metadata.create_all(bind=engine)
 
 
 app = FastAPI(
-    title="Tyson Logistics API"
+    title="Tyson Logistics API",
+    version="1.0"
 )
 
 
@@ -42,9 +43,9 @@ def get_db():
 
 
 
-def generer_numero():
+def generer_numero_suivi():
 
-    return "TYC-" + ''.join(
+    return "TYC-" + "".join(
         random.choices(
             string.digits,
             k=10
@@ -62,9 +63,10 @@ def accueil():
 
 
 
-# =========================
+
+# =====================
 # CREER UN COLIS
-# =========================
+# =====================
 
 @app.post(
     "/colis",
@@ -77,7 +79,7 @@ def ajouter_colis(
 
     nouveau_colis = models.Colis(
 
-        numero=generer_numero(),
+        numero_suivi=generer_numero_suivi(),
 
         client=colis.client,
 
@@ -107,9 +109,9 @@ def ajouter_colis(
 
 
 
-# =========================
-# LISTE DES COLIS
-# =========================
+# =====================
+# LISTE COLIS
+# =====================
 
 @app.get(
     "/colis",
@@ -125,21 +127,21 @@ def liste_colis(
 
 
 
-# =========================
+# =====================
 # SUIVI COLIS
-# =========================
+# =====================
 
 @app.get(
-    "/suivi/{numero}",
+    "/suivi/{numero_suivi}",
     response_model=schemas.ColisResponse
 )
 def suivi_colis(
-    numero: str,
+    numero_suivi: str,
     db: Session = Depends(get_db)
 ):
 
     colis = db.query(models.Colis).filter(
-        models.Colis.numero == numero
+        models.Colis.numero_suivi == numero_suivi
     ).first()
 
 
@@ -158,20 +160,20 @@ def suivi_colis(
 
 
 
-# =========================
+# =====================
 # SUPPRIMER COLIS
-# =========================
+# =====================
 
 @app.delete(
-    "/colis/{numero}"
+    "/colis/{numero_suivi}"
 )
 def supprimer_colis(
-    numero: str,
+    numero_suivi: str,
     db: Session = Depends(get_db)
 ):
 
     colis = db.query(models.Colis).filter(
-        models.Colis.numero == numero
+        models.Colis.numero_suivi == numero_suivi
     ).first()
 
 

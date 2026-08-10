@@ -20,7 +20,7 @@ class ColisCreate(ColisBase):
 class ColisResponse(ColisBase):
 
     id: int
-    numero: str
+    numero_suivi: str
 
 
     class Config:
