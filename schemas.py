@@ -1,21 +1,23 @@
 from pydantic import BaseModel
+from typing import Optional
 
 
-# Création d'un colis
-class ColisCreate(BaseModel):
-
+class ColisBase(BaseModel):
     client: str
     telephone: str
     produit: str
-    poids: str
+    poids: float
     destination: str
-    statut: str
+    statut: str = "Reçu en Chine"
 
 
+class ColisCreate(ColisBase):
+    pass
 
-# Ajout historique
-class HistoriqueCreate(BaseModel):
 
-    numero_colis: str
-    statut: str
-    localisation: str
+class ColisResponse(ColisBase):
+    id: int
+    numero_suivi: str
+
+    class Config:
+        from_attributes = True
