@@ -62,7 +62,9 @@ def accueil():
 
 
 
-# AJOUTER COLIS
+# =========================
+# CREER UN COLIS
+# =========================
 
 @app.post(
     "/colis",
@@ -73,8 +75,7 @@ def ajouter_colis(
     db: Session = Depends(get_db)
 ):
 
-
-    nouveau = models.Colis(
+    nouveau_colis = models.Colis(
 
         numero=generer_numero(),
 
@@ -93,20 +94,22 @@ def ajouter_colis(
     )
 
 
-    db.add(nouveau)
+    db.add(nouveau_colis)
 
     db.commit()
 
-    db.refresh(nouveau)
+    db.refresh(nouveau_colis)
 
 
-    return nouveau
+    return nouveau_colis
 
 
 
 
 
-# LISTE COLIS
+# =========================
+# LISTE DES COLIS
+# =========================
 
 @app.get(
     "/colis",
@@ -122,7 +125,9 @@ def liste_colis(
 
 
 
+# =========================
 # SUIVI COLIS
+# =========================
 
 @app.get(
     "/suivi/{numero}",
@@ -132,7 +137,6 @@ def suivi_colis(
     numero: str,
     db: Session = Depends(get_db)
 ):
-
 
     colis = db.query(models.Colis).filter(
         models.Colis.numero == numero
@@ -154,7 +158,9 @@ def suivi_colis(
 
 
 
-# SUPPRESSION COLIS
+# =========================
+# SUPPRIMER COLIS
+# =========================
 
 @app.delete(
     "/colis/{numero}"
@@ -163,7 +169,6 @@ def supprimer_colis(
     numero: str,
     db: Session = Depends(get_db)
 ):
-
 
     colis = db.query(models.Colis).filter(
         models.Colis.numero == numero
@@ -179,9 +184,11 @@ def supprimer_colis(
         )
 
 
+
     db.delete(colis)
 
     db.commit()
+
 
 
     return {
