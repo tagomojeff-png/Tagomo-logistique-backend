@@ -1,192 +1,173 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import Column, Integer, String
 from sqlalchemy.orm import Session
-from datetime import datetime
 
-from database import Base, engine, SessionLocal
+import models
+import schemas
+from database import engine, SessionLocal
+
+
+# Création des tables
+models.Base.metadata.create_all(bind=engine)
 
 
 app = FastAPI(
-    title="Tyson & Co Logistics"
+    title="Tyson Logistics API",
+    version="1.0"
 )
 
 
-# =====================
-# DATABASE MODEL
-# =====================
-
-class Colis(Base):
-
-    __tablename__ = "colis"
-
-
-    id = Column(
-        Integer,
-        primary_key=True,
-        index=True
-    )
-
-
-    numero = Column(
-        String,
-        unique=True,
-        index=True
-    )
-
-
-    client = Column(String)
-
-    telephone = Column(String)
-
-    produit = Column(String)
-
-    poids = Column(String)
-
-    destination = Column(String)
-
-
-    statut = Column(
-        String,
-        default="Reçu en Chine"
-    )
-
-
-    date_creation = Column(
-        String,
-        default=lambda:
-        datetime.now().strftime("%d/%m/%Y")
-    )
-
-
-    historique = Column(
-        String,
-        default="Reçu en Chine"
-    )
-
-
-
-
-Base.metadata.create_all(bind=engine)
-
-
-
-# =====================
+# =========================
 # CORS
-# =====================
+# =========================
 
 app.add_middleware(
-
     CORSMiddleware,
-
     allow_origins=[
-        "http://localhost:5173"
+        "http://localhost:5173",
+        "https://ton-site-vercel.vercel.app"
     ],
-
     allow_credentials=True,
-
     allow_methods=["*"],
-
-    allow_headers=["*"]
-
+    allow_headers=["*"],
 )
 
 
 
-
+# =========================
+# DATABASE
+# =========================
 
 def get_db():
 
     db = SessionLocal()
 
     try:
-
         yield db
 
     finally:
-
         db.close()
 
 
 
-
-
-
-# =====================
-# TEST
-# =====================
+# =========================
+# TEST API
+# =========================
 
 @app.get("/")
-def home():
+def accueil():
 
     return {
-
-        "message":
-        "Tyson & Co Logistics API active"
-
+        "message": "Tyson Logistics API fonctionne 🚚"
     }
 
 
 
+# =========================
+# AJOUTER UN COLIS
+# =========================
 
-
-
-
-# =====================
-# GENERATE NUMBER
-# =====================
-
-def generer_numero(db):
-
-    date = datetime.now().strftime("%Y%m%d")
-
-    nombre = db.query(Colis).count()+1
-
-
-    return f"TYC-{date}-{nombre:03d}"
-
-
-
-
-
-
-
-# =====================
-# AJOUT COLIS
-# =====================
-
-@app.post("/colis")
+@app.post("/colis", response_model=schemas.ColisResponse)
 def ajouter_colis(
-
-    data:dict,
-
-    db:Session=Depends(get_db)
-
+    colis: schemas.ColisCreate,
+    db: Session = Depends(get_db)
 ):
 
+    nouveau_colis = models.Colis(
 
-    colis = Colis(
+        client=colis.client,
 
-        numero=generer_numero(db),
+        telephone=colis.telephone,
 
-        client=data["client"],
+        produit=colis.produit,
 
-        telephone=data["telephone"],
+        poids=colis.poids,
 
-        produit=data["produit"],
+        destination=colis.destination,
 
-        poids=data["poids"],
-
-        destination=data["destination"],
-
-        statut=data["statut"],
-
-        historique=data["statut"]
+        statut=colis.statut
 
     )
 
 
-    db.add(colis)
+    db.add(nouveau_colis)
+
+    db.commit()
+
+    db.refresh(nouveau_colis)
+
+
+    return nouveau_colis
+
+
+
+# =========================
+# LISTE COLIS
+# =========================
+
+@app.get("/colis")
+def liste_colis(
+    db: Session = Depends(get_db)
+):
+
+    colis = db.query(models.Colis).all()
+
+    return colis
+
+
+
+# =========================
+# SUIVI COLIS
+# =========================
+
+@app.get("/suivi/{numero_suivi}")
+def suivi_colis(
+    numero_suivi: str,
+    db: Session = Depends(get_db)
+):
+
+    colis = db.query(models.Colis).filter(
+        models.Colis.numero_suivi == numero_suivi
+    ).first()
+
+
+    if not colis:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Colis introuvable"
+        )
+
+
+    return colis
+
+
+
+# =========================
+# MODIFIER STATUT
+# =========================
+
+@app.put("/colis/{numero_suivi}")
+def modifier_statut(
+    numero_suivi: str,
+    statut: str,
+    db: Session = Depends(get_db)
+):
+
+    colis = db.query(models.Colis).filter(
+        models.Colis.numero_suivi == numero_suivi
+    ).first()
+
+
+    if not colis:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Colis introuvable"
+        )
+
+
+    colis.statut = statut
 
     db.commit()
 
@@ -194,204 +175,3 @@ def ajouter_colis(
 
 
     return colis
-
-
-
-
-
-
-
-# =====================
-# LISTE ADMIN
-# =====================
-
-@app.get("/colis")
-def liste_colis(
-
-    db:Session=Depends(get_db)
-
-):
-
-    return db.query(Colis).all()
-
-
-
-
-
-
-
-
-# =====================
-# SUIVI
-# =====================
-
-@app.get("/colis/{numero}")
-def suivre_colis(
-
-    numero:str,
-
-    db:Session=Depends(get_db)
-
-):
-
-
-    colis = db.query(Colis).filter(
-
-        Colis.numero == numero
-
-    ).first()
-
-
-
-    if not colis:
-
-        return {
-
-            "message":
-            "Colis introuvable"
-
-        }
-
-
-
-
-    return colis
-
-
-
-
-
-
-
-# =====================
-# SUPPRIMER
-# =====================
-
-@app.delete("/colis/{id}")
-def supprimer_colis(
-
-    id:int,
-
-    db:Session=Depends(get_db)
-
-):
-
-
-    colis = db.query(Colis).filter(
-
-        Colis.id == id
-
-    ).first()
-
-
-
-    if colis:
-
-        db.delete(colis)
-
-        db.commit()
-
-
-
-    return {
-
-        "message":
-        "Supprimé"
-
-    }
-
-
-
-
-
-
-# =====================
-# CHANGER STATUT
-# =====================
-
-@app.put("/colis/{id}")
-def modifier_statut(
-
-    id:int,
-
-    data:dict,
-
-    db:Session=Depends(get_db)
-
-):
-
-
-    colis=db.query(Colis).filter(
-
-        Colis.id==id
-
-    ).first()
-
-
-
-    if colis:
-
-
-        colis.statut=data["statut"]
-
-
-        colis.historique += (
-            " → "
-            + data["statut"]
-        )
-
-
-        db.commit()
-
-        db.refresh(colis)
-
-
-
-    return colis
-
-
-
-
-
-
-# =====================
-# STATS
-# =====================
-
-@app.get("/admin/stats")
-def stats(
-
-    db:Session=Depends(get_db)
-
-):
-
-    return {
-
-        "total":
-        db.query(Colis).count(),
-
-
-        "transit":
-        db.query(Colis)
-        .filter(
-            Colis.statut=="En transit"
-        )
-        .count(),
-
-
-        "arrive":
-        db.query(Colis)
-        .filter(
-            Colis.statut=="Arrivé Cameroun"
-        )
-        .count(),
-
-
-        "livre":
-        db.query(Colis)
-        .filter(
-            Colis.statut=="Livré"
-        )
-        .count()
-
-    }
