@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import sqlite3
 import random
+import os
 
 
 app = FastAPI(
@@ -10,9 +11,9 @@ app = FastAPI(
 )
 
 
-# ======================
+# =========================
 # CORS
-# ======================
+# =========================
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,20 +31,25 @@ app.add_middleware(
 
 
 
-# ======================
+# =========================
 # DATABASE
-# ======================
+# =========================
+
+DATABASE = os.path.join(
+    os.path.dirname(__file__),
+    "colis.db"
+)
+
 
 def connexion():
 
-    return sqlite3.connect("colis.db")
+    return sqlite3.connect(DATABASE)
 
 
 
 def init_db():
 
     conn = connexion()
-
     cursor = conn.cursor()
 
 
@@ -52,12 +58,18 @@ def init_db():
 
         id INTEGER PRIMARY KEY AUTOINCREMENT,
 
-        client TEXT,
+        client TEXT NOT NULL,
+
         telephone TEXT,
+
         produit TEXT,
+
         poids TEXT,
+
         destination TEXT,
+
         statut TEXT,
+
         numero_suivi TEXT UNIQUE
 
     )
@@ -73,10 +85,9 @@ init_db()
 
 
 
-# ======================
+# =========================
 # MODELES
-# ======================
-
+# =========================
 
 class ColisCreate(BaseModel):
 
@@ -85,7 +96,7 @@ class ColisCreate(BaseModel):
     produit:str
     poids:str
     destination:str
-    statut:str="Reçu en Chine"
+    statut:str = "Reçu en Chine"
 
 
 
@@ -95,10 +106,9 @@ class StatutUpdate(BaseModel):
 
 
 
-# ======================
-# GENERER CODE
-# ======================
-
+# =========================
+# GENERATEUR CODE
+# =========================
 
 def generer_numero():
 
@@ -111,63 +121,85 @@ def generer_numero():
 
 
 
-# ======================
-# CREER COLIS
-# ======================
-
+# =========================
+# CREATION COLIS
+# =========================
 
 @app.post("/colis")
 def ajouter_colis(colis:ColisCreate):
 
-    conn=connexion()
-    cursor=conn.cursor()
+    conn = connexion()
+    cursor = conn.cursor()
 
 
-    numero=generer_numero()
+    numero = generer_numero()
 
 
-    cursor.execute(
-        """
-        INSERT INTO colis
-        (
-        client,
-        telephone,
-        produit,
-        poids,
-        destination,
-        statut,
-        numero_suivi
+    try:
+
+        cursor.execute(
+            """
+            INSERT INTO colis
+            (
+            client,
+            telephone,
+            produit,
+            poids,
+            destination,
+            statut,
+            numero_suivi
+            )
+
+            VALUES (?,?,?,?,?,?,?)
+
+            """,
+
+            (
+                colis.client,
+                colis.telephone,
+                colis.produit,
+                colis.poids,
+                colis.destination,
+                colis.statut,
+                numero
+            )
         )
 
-        VALUES (?,?,?,?,?,?,?)
 
-        """,
+        conn.commit()
 
-        (
-        colis.client,
-        colis.telephone,
-        colis.produit,
-        colis.poids,
-        colis.destination,
-        colis.statut,
-        numero
+
+        id_colis = cursor.lastrowid
+
+
+    except sqlite3.IntegrityError:
+
+        conn.close()
+
+        raise HTTPException(
+            status_code=400,
+            detail="Erreur génération numéro colis"
         )
-    )
 
-
-    conn.commit()
-
-    id_colis=cursor.lastrowid
 
     conn.close()
-
 
 
     return {
 
         "id":id_colis,
 
-        **colis.dict(),
+        "client":colis.client,
+
+        "telephone":colis.telephone,
+
+        "produit":colis.produit,
+
+        "poids":colis.poids,
+
+        "destination":colis.destination,
+
+        "statut":colis.statut,
 
         "numero_suivi":numero
 
@@ -175,16 +207,15 @@ def ajouter_colis(colis:ColisCreate):
 
 
 
-# ======================
-# LISTE COLIS
-# ======================
-
+# =========================
+# LISTE ADMIN
+# =========================
 
 @app.get("/colis")
 def liste_colis():
 
-    conn=connexion()
-    cursor=conn.cursor()
+    conn = connexion()
+    cursor = conn.cursor()
 
 
     cursor.execute(
@@ -192,19 +223,14 @@ def liste_colis():
     )
 
 
-    rows=cursor.fetchall()
-
+    rows = cursor.fetchall()
 
     conn.close()
 
 
-    resultat=[]
+    return [
 
-
-    for r in rows:
-
-        resultat.append({
-
+        {
             "id":r[0],
             "client":r[1],
             "telephone":r[2],
@@ -214,40 +240,35 @@ def liste_colis():
             "statut":r[6],
             "numero_suivi":r[7]
 
-        })
+        }
+
+        for r in rows
+
+    ]
 
 
-    return resultat
 
-
-
-# ======================
+# =========================
 # SUIVI CLIENT
-# ======================
-
+# =========================
 
 @app.get("/suivi/{numero_suivi}")
 def suivi(numero_suivi:str):
 
-
-    conn=connexion()
-    cursor=conn.cursor()
+    conn = connexion()
+    cursor = conn.cursor()
 
 
     cursor.execute(
-
         """
         SELECT * FROM colis
         WHERE numero_suivi=?
-
         """,
-
         (numero_suivi,)
-
     )
 
 
-    colis=cursor.fetchone()
+    colis = cursor.fetchone()
 
 
     conn.close()
@@ -257,11 +278,8 @@ def suivi(numero_suivi:str):
     if not colis:
 
         raise HTTPException(
-
             status_code=404,
-
             detail="Colis introuvable"
-
         )
 
 
@@ -282,34 +300,25 @@ def suivi(numero_suivi:str):
 
 
 
-
-# ======================
-# MODIFIER STATUT
-# ======================
-
+# =========================
+# MODIFICATION STATUT
+# =========================
 
 @app.put("/colis/{id}")
-def modifier_statut(
-    id:int,
-    data:StatutUpdate
-):
+def modifier_statut(id:int, data:StatutUpdate):
 
-
-    conn=connexion()
-    cursor=conn.cursor()
+    conn = connexion()
+    cursor = conn.cursor()
 
 
 
     cursor.execute(
-
         "SELECT id FROM colis WHERE id=?",
-
         (id,)
-
     )
 
 
-    existe=cursor.fetchone()
+    existe = cursor.fetchone()
 
 
 
@@ -318,37 +327,24 @@ def modifier_statut(
         conn.close()
 
         raise HTTPException(
-
             status_code=404,
-
             detail="Colis introuvable"
-
         )
 
 
 
     cursor.execute(
-
         """
-
         UPDATE colis
-
         SET statut=?
-
         WHERE id=?
-
         """,
 
         (
-
-        data.statut,
-
-        id
-
+            data.statut,
+            id
         )
-
     )
-
 
 
     conn.commit()
@@ -369,65 +365,50 @@ def modifier_statut(
 
 
 
-
-# ======================
-# SUPPRIMER
-# ======================
-
+# =========================
+# SUPPRESSION
+# =========================
 
 @app.delete("/colis/{id}")
 def supprimer_colis(id:int):
 
-
-    conn=connexion()
-    cursor=conn.cursor()
-
+    conn = connexion()
+    cursor = conn.cursor()
 
 
     cursor.execute(
-
         "DELETE FROM colis WHERE id=?",
-
         (id,)
-
     )
-
 
 
     conn.commit()
     conn.close()
 
 
-
     return {
-
         "message":"Colis supprimé"
-
     }
 
 
 
 
-
-# ======================
-# STATS
-# ======================
-
+# =========================
+# STATISTIQUES
+# =========================
 
 @app.get("/admin/stats")
 def stats():
 
-
-    conn=connexion()
-    cursor=conn.cursor()
-
+    conn = connexion()
+    cursor = conn.cursor()
 
 
     cursor.execute(
         "SELECT COUNT(*) FROM colis"
     )
 
-    total=cursor.fetchone()[0]
+    total = cursor.fetchone()[0]
 
 
 
@@ -435,7 +416,7 @@ def stats():
         "SELECT COUNT(*) FROM colis WHERE statut='En transit'"
     )
 
-    transit=cursor.fetchone()[0]
+    transit = cursor.fetchone()[0]
 
 
 
@@ -443,7 +424,7 @@ def stats():
         "SELECT COUNT(*) FROM colis WHERE statut='Arrivé Cameroun'"
     )
 
-    arrive=cursor.fetchone()[0]
+    arrive = cursor.fetchone()[0]
 
 
 
@@ -451,8 +432,7 @@ def stats():
         "SELECT COUNT(*) FROM colis WHERE statut='Livré'"
     )
 
-    livre=cursor.fetchone()[0]
-
+    livre = cursor.fetchone()[0]
 
 
     conn.close()
