@@ -3,6 +3,7 @@ from datetime import datetime
 from database import Base
 
 
+
 class Colis(Base):
 
     __tablename__ = "colis"
@@ -15,7 +16,7 @@ class Colis(Base):
     )
 
 
-    numero_suivi = Column(
+    numero = Column(
         String,
         unique=True,
         index=True

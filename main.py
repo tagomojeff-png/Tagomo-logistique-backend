@@ -11,17 +11,15 @@ import schemas
 from database import engine, SessionLocal
 
 
-# Création des tables
 models.Base.metadata.create_all(bind=engine)
 
 
 app = FastAPI(
-    title="Tyson Logistics API",
-    version="1.0"
+    title="Tyson Logistics API"
 )
 
 
-# Autoriser le frontend
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -44,7 +42,7 @@ def get_db():
 
 
 
-def generer_numero_suivi():
+def generer_numero():
 
     return "TYC-" + ''.join(
         random.choices(
@@ -64,9 +62,7 @@ def accueil():
 
 
 
-# =========================
-# AJOUTER UN COLIS
-# =========================
+# AJOUTER COLIS
 
 @app.post(
     "/colis",
@@ -77,12 +73,10 @@ def ajouter_colis(
     db: Session = Depends(get_db)
 ):
 
-    numero = generer_numero_suivi()
 
+    nouveau = models.Colis(
 
-    nouveau_colis = models.Colis(
-
-        numero_suivi=numero,
+        numero=generer_numero(),
 
         client=colis.client,
 
@@ -99,22 +93,20 @@ def ajouter_colis(
     )
 
 
-    db.add(nouveau_colis)
+    db.add(nouveau)
 
     db.commit()
 
-    db.refresh(nouveau_colis)
+    db.refresh(nouveau)
 
 
-    return nouveau_colis
+    return nouveau
 
 
 
 
 
-# =========================
-# LISTE DES COLIS
-# =========================
+# LISTE COLIS
 
 @app.get(
     "/colis",
@@ -130,22 +122,20 @@ def liste_colis(
 
 
 
-# =========================
 # SUIVI COLIS
-# =========================
 
 @app.get(
-    "/suivi/{numero_suivi}",
+    "/suivi/{numero}",
     response_model=schemas.ColisResponse
 )
-def suivre_colis(
-    numero_suivi: str,
+def suivi_colis(
+    numero: str,
     db: Session = Depends(get_db)
 ):
 
 
     colis = db.query(models.Colis).filter(
-        models.Colis.numero_suivi == numero_suivi
+        models.Colis.numero == numero
     ).first()
 
 
@@ -164,21 +154,19 @@ def suivre_colis(
 
 
 
-# =========================
-# SUPPRIMER UN COLIS
-# =========================
+# SUPPRESSION COLIS
 
 @app.delete(
-    "/colis/{numero_suivi}"
+    "/colis/{numero}"
 )
 def supprimer_colis(
-    numero_suivi: str,
+    numero: str,
     db: Session = Depends(get_db)
 ):
 
 
     colis = db.query(models.Colis).filter(
-        models.Colis.numero_suivi == numero_suivi
+        models.Colis.numero == numero
     ).first()
 
 
@@ -191,11 +179,9 @@ def supprimer_colis(
         )
 
 
-
     db.delete(colis)
 
     db.commit()
-
 
 
     return {
