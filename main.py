@@ -1,13 +1,21 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import sqlite3
 import random
-import os
+
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+
+import models
+import schemas
+from database import engine, SessionLocal
+
+
+# Création des tables
+models.Base.metadata.create_all(bind=engine)
 
 
 app = FastAPI(
-    title="Tyson Logistics API"
+    title="Tyson Logistics API",
+    version="1.0"
 )
 
 
@@ -17,13 +25,10 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-
     allow_origins=[
         "http://localhost:5173",
-        "https://tagomo-logistique-frontend-pkgy.vercel.app",
-        "https://tagomo-logistique-frontend.vercel.app"
+        "https://tagomo-logistique-frontend-pkgy.vercel.app"
     ],
-
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -35,244 +40,160 @@ app.add_middleware(
 # DATABASE
 # =========================
 
-DATABASE = os.path.join(
-    os.path.dirname(__file__),
-    "colis.db"
-)
+def get_db():
 
-
-def connexion():
-
-    return sqlite3.connect(DATABASE)
-
-
-
-def init_db():
-
-    conn = connexion()
-    cursor = conn.cursor()
-
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS colis(
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        client TEXT NOT NULL,
-
-        telephone TEXT,
-
-        produit TEXT,
-
-        poids TEXT,
-
-        destination TEXT,
-
-        statut TEXT,
-
-        numero_suivi TEXT UNIQUE
-
-    )
-    """)
-
-
-    conn.commit()
-    conn.close()
-
-
-
-init_db()
-
-
-
-# =========================
-# MODELES
-# =========================
-
-class ColisCreate(BaseModel):
-
-    client:str
-    telephone:str
-    produit:str
-    poids:str
-    destination:str
-    statut:str = "Reçu en Chine"
-
-
-
-class StatutUpdate(BaseModel):
-
-    statut:str
-
-
-
-# =========================
-# GENERATEUR CODE
-# =========================
-
-def generer_numero():
-
-    return "TYC-" + str(
-        random.randint(
-            1000000000,
-            9999999999
-        )
-    )
-
-
-
-# =========================
-# CREATION COLIS
-# =========================
-
-@app.post("/colis")
-def ajouter_colis(colis:ColisCreate):
-
-    conn = connexion()
-    cursor = conn.cursor()
-
-
-    numero = generer_numero()
-
+    db = SessionLocal()
 
     try:
+        yield db
 
-        cursor.execute(
-            """
-            INSERT INTO colis
-            (
-            client,
-            telephone,
-            produit,
-            poids,
-            destination,
-            statut,
-            numero_suivi
-            )
+    finally:
+        db.close()
 
-            VALUES (?,?,?,?,?,?,?)
 
-            """,
 
-            (
-                colis.client,
-                colis.telephone,
-                colis.produit,
-                colis.poids,
-                colis.destination,
-                colis.statut,
-                numero
-            )
+# =========================
+# STATUT PAR DEFAUT
+# =========================
+
+STATUT_PAR_DEFAUT = "Reçu en Chine"
+
+
+
+# =========================
+# GENERATION NUMERO DE SUIVI
+# =========================
+# Format : TYC-XXXXXXXXXX (10 chiffres)
+# On vérifie l'unicité en base avant de le retourner.
+
+def generer_numero_suivi(db: Session) -> str:
+
+    while True:
+
+        chiffres = "".join(
+            str(random.randint(0, 9)) for _ in range(10)
         )
 
+        numero = f"TYC-{chiffres}"
 
-        conn.commit()
+        existant = db.query(models.Colis).filter(
+            models.Colis.numero == numero
+        ).first()
 
-
-        id_colis = cursor.lastrowid
-
-
-    except sqlite3.IntegrityError:
-
-        conn.close()
-
-        raise HTTPException(
-            status_code=400,
-            detail="Erreur génération numéro colis"
-        )
+        if not existant:
+            return numero
 
 
-    conn.close()
 
+# =========================
+# HELPER : COLIS -> DICT
+# =========================
+# Convertit un objet Colis en dictionnaire pour la réponse JSON,
+# en exposant "numero_suivi" (nom attendu par le frontend et le
+# cahier des charges) même si la colonne en base s'appelle "numero".
+
+def colis_to_dict(colis: models.Colis) -> dict:
 
     return {
-
-        "id":id_colis,
-
-        "client":colis.client,
-
-        "telephone":colis.telephone,
-
-        "produit":colis.produit,
-
-        "poids":colis.poids,
-
-        "destination":colis.destination,
-
-        "statut":colis.statut,
-
-        "numero_suivi":numero
-
+        "id": colis.id,
+        "numero_suivi": colis.numero,
+        "client": colis.client,
+        "telephone": colis.telephone,
+        "produit": colis.produit,
+        "poids": colis.poids,
+        "destination": colis.destination,
+        "statut": colis.statut,
     }
 
 
 
 # =========================
-# LISTE ADMIN
+# TEST API
 # =========================
 
-@app.get("/colis")
-def liste_colis():
+@app.get("/")
+def accueil():
 
-    conn = connexion()
-    cursor = conn.cursor()
+    return {
+        "message": "Tyson Logistics API fonctionne 🚚"
+    }
 
 
-    cursor.execute(
-        "SELECT * FROM colis ORDER BY id DESC"
+
+# =========================
+# AJOUTER UN COLIS
+# =========================
+
+@app.post("/colis", response_model=schemas.ColisResponse)
+def ajouter_colis(
+    colis: schemas.ColisCreate,
+    db: Session = Depends(get_db)
+):
+
+    numero = generer_numero_suivi(db)
+
+    statut = colis.statut if colis.statut else STATUT_PAR_DEFAUT
+
+    nouveau_colis = models.Colis(
+
+        numero=numero,
+
+        client=colis.client,
+
+        telephone=colis.telephone,
+
+        produit=colis.produit,
+
+        poids=colis.poids,
+
+        destination=colis.destination,
+
+        statut=statut
+
     )
 
 
-    rows = cursor.fetchall()
+    db.add(nouveau_colis)
 
-    conn.close()
+    db.commit()
+
+    db.refresh(nouveau_colis)
 
 
-    return [
-
-        {
-            "id":r[0],
-            "client":r[1],
-            "telephone":r[2],
-            "produit":r[3],
-            "poids":r[4],
-            "destination":r[5],
-            "statut":r[6],
-            "numero_suivi":r[7]
-
-        }
-
-        for r in rows
-
-    ]
+    return colis_to_dict(nouveau_colis)
 
 
 
 # =========================
-# SUIVI CLIENT
+# LISTE COLIS
 # =========================
 
-@app.get("/suivi/{numero_suivi}")
-def suivi(numero_suivi:str):
+@app.get("/colis", response_model=list[schemas.ColisResponse])
+def liste_colis(
+    db: Session = Depends(get_db)
+):
 
-    conn = connexion()
-    cursor = conn.cursor()
+    colis = db.query(models.Colis).all()
 
-
-    cursor.execute(
-        """
-        SELECT * FROM colis
-        WHERE numero_suivi=?
-        """,
-        (numero_suivi,)
-    )
+    return [colis_to_dict(c) for c in colis]
 
 
-    colis = cursor.fetchone()
 
+# =========================
+# SUIVI COLIS
+# =========================
 
-    conn.close()
+@app.get("/suivi/{numero_suivi}", response_model=schemas.ColisResponse)
+def suivi_colis(
+    numero_suivi: str,
+    db: Session = Depends(get_db)
+):
 
+    numero_nettoye = numero_suivi.strip()
+
+    colis = db.query(models.Colis).filter(
+        models.Colis.numero == numero_nettoye
+    ).first()
 
 
     if not colis:
@@ -283,48 +204,27 @@ def suivi(numero_suivi:str):
         )
 
 
-
-    return {
-
-        "id":colis[0],
-        "client":colis[1],
-        "telephone":colis[2],
-        "produit":colis[3],
-        "poids":colis[4],
-        "destination":colis[5],
-        "statut":colis[6],
-        "numero_suivi":colis[7]
-
-    }
-
+    return colis_to_dict(colis)
 
 
 
 # =========================
-# MODIFICATION STATUT
+# MODIFIER STATUT (par id)
 # =========================
 
-@app.put("/colis/{id}")
-def modifier_statut(id:int, data:StatutUpdate):
+@app.put("/colis/{id}", response_model=schemas.ColisResponse)
+def modifier_statut(
+    id: int,
+    donnees: schemas.StatutUpdate,
+    db: Session = Depends(get_db)
+):
 
-    conn = connexion()
-    cursor = conn.cursor()
-
-
-
-    cursor.execute(
-        "SELECT id FROM colis WHERE id=?",
-        (id,)
-    )
+    colis = db.query(models.Colis).filter(
+        models.Colis.id == id
+    ).first()
 
 
-    existe = cursor.fetchone()
-
-
-
-    if not existe:
-
-        conn.close()
+    if not colis:
 
         raise HTTPException(
             status_code=404,
@@ -332,121 +232,78 @@ def modifier_statut(id:int, data:StatutUpdate):
         )
 
 
+    colis.statut = donnees.statut
 
-    cursor.execute(
-        """
-        UPDATE colis
-        SET statut=?
-        WHERE id=?
-        """,
+    db.commit()
 
-        (
-            data.statut,
-            id
-        )
-    )
+    db.refresh(colis)
 
 
-    conn.commit()
-    conn.close()
-
-
-
-    return {
-
-        "message":"Statut modifié",
-
-        "id":id,
-
-        "statut":data.statut
-
-    }
-
+    return colis_to_dict(colis)
 
 
 
 # =========================
-# SUPPRESSION
+# SUPPRIMER UN COLIS (par id)
 # =========================
 
 @app.delete("/colis/{id}")
-def supprimer_colis(id:int):
+def supprimer_colis(
+    id: int,
+    db: Session = Depends(get_db)
+):
 
-    conn = connexion()
-    cursor = conn.cursor()
-
-
-    cursor.execute(
-        "DELETE FROM colis WHERE id=?",
-        (id,)
-    )
+    colis = db.query(models.Colis).filter(
+        models.Colis.id == id
+    ).first()
 
 
-    conn.commit()
-    conn.close()
+    if not colis:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Colis introuvable"
+        )
 
 
-    return {
-        "message":"Colis supprimé"
-    }
+    db.delete(colis)
 
+    db.commit()
+
+
+    return {"message": "Colis supprimé avec succès"}
 
 
 
 # =========================
-# STATISTIQUES
+# STATISTIQUES ADMIN
 # =========================
 
-@app.get("/admin/stats")
-def stats():
+@app.get("/admin/stats", response_model=schemas.AdminStats)
+def stats_admin(
+    db: Session = Depends(get_db)
+):
 
-    conn = connexion()
-    cursor = conn.cursor()
+    tous_les_colis = db.query(models.Colis).all()
 
+    total_colis = len(tous_les_colis)
 
-    cursor.execute(
-        "SELECT COUNT(*) FROM colis"
+    en_transit = sum(
+        1 for c in tous_les_colis if c.statut == "En transit"
     )
 
-    total = cursor.fetchone()[0]
-
-
-
-    cursor.execute(
-        "SELECT COUNT(*) FROM colis WHERE statut='En transit'"
+    arrive_cameroun = sum(
+        1 for c in tous_les_colis if c.statut == "Arrivé Cameroun"
     )
 
-    transit = cursor.fetchone()[0]
-
-
-
-    cursor.execute(
-        "SELECT COUNT(*) FROM colis WHERE statut='Arrivé Cameroun'"
+    livre = sum(
+        1 for c in tous_les_colis if c.statut == "Livré"
     )
-
-    arrive = cursor.fetchone()[0]
-
-
-
-    cursor.execute(
-        "SELECT COUNT(*) FROM colis WHERE statut='Livré'"
-    )
-
-    livre = cursor.fetchone()[0]
-
-
-    conn.close()
-
 
 
     return {
-
-        "total":total,
-
-        "transit":transit,
-
-        "arrive":arrive,
-
-        "livre":livre
-
+        "total_colis": total_colis,
+        "en_transit": en_transit,
+        "arrive_cameroun": arrive_cameroun,
+        "livre": livre,
     }

@@ -4,55 +4,30 @@ from database import Base
 
 
 class Colis(Base):
-
     __tablename__ = "colis"
 
+    id = Column(Integer, primary_key=True, index=True)
 
-    id = Column(
-        Integer,
-        primary_key=True,
-        index=True
-    )
-
-
-    numero_suivi = Column(
+    numero = Column(
         String,
         unique=True,
         index=True
     )
 
-
     client = Column(String)
-
     telephone = Column(String)
-
     produit = Column(String)
-
     poids = Column(String)
-
     destination = Column(String)
-
     statut = Column(String)
 
 
-
 class HistoriqueSuivi(Base):
-
     __tablename__ = "historique_suivi"
 
+    id = Column(Integer, primary_key=True, index=True)
 
-    id = Column(
-        Integer,
-        primary_key=True,
-        index=True
-    )
-
-
-    numero_colis = Column(
-        String,
-        index=True
-    )
-
+    numero_colis = Column(String, index=True)
 
     statut = Column(String)
 

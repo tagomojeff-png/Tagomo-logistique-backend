@@ -1,27 +1,55 @@
 from pydantic import BaseModel
+from typing import Optional
 
 
-class ColisBase(BaseModel):
+# Création d'un colis
+# Le statut est optionnel : si non fourni, le backend applique
+# automatiquement le statut par défaut "Reçu en Chine".
+class ColisCreate(BaseModel):
 
     client: str
     telephone: str
     produit: str
     poids: str
     destination: str
-    statut: str = "Reçu en Chine"
+    statut: Optional[str] = None
 
 
 
-class ColisCreate(ColisBase):
-    pass
-
-
-
-class ColisResponse(ColisBase):
+# Réponse renvoyée pour un colis (création, liste, suivi, modification)
+class ColisResponse(BaseModel):
 
     id: int
     numero_suivi: str
+    client: str
+    telephone: str
+    produit: str
+    poids: str
+    destination: str
+    statut: str
 
 
-    class Config:
-        from_attributes = True
+
+# Modification du statut d'un colis (corps de la requête PUT)
+class StatutUpdate(BaseModel):
+
+    statut: str
+
+
+
+# Statistiques admin
+class AdminStats(BaseModel):
+
+    total_colis: int
+    en_transit: int
+    arrive_cameroun: int
+    livre: int
+
+
+
+# Ajout historique
+class HistoriqueCreate(BaseModel):
+
+    numero_colis: str
+    statut: str
+    localisation: str
