@@ -25,11 +25,13 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "https://tagomo-logistique-frontend-pkgy.vercel.app"
-    ],
-    allow_credentials=True,
+    # L'app n'utilise aucun cookie de session (l'admin est protégé par un
+    # mot de passe stocké côté client), donc pas besoin de restreindre
+    # les origines ni d'activer allow_credentials : ça élimine tout risque
+    # de mismatch d'origine (casse, sous-domaine, preview Vercel, etc.)
+    # qui pouvait faire échouer les requêtes CORS sur certains navigateurs.
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -77,33 +79,11 @@ def generer_numero_suivi(db: Session) -> str:
         numero = f"TYC-{chiffres}"
 
         existant = db.query(models.Colis).filter(
-            models.Colis.numero == numero
+            models.Colis.numero_suivi == numero
         ).first()
 
         if not existant:
             return numero
-
-
-
-# =========================
-# HELPER : COLIS -> DICT
-# =========================
-# Convertit un objet Colis en dictionnaire pour la réponse JSON,
-# en exposant "numero_suivi" (nom attendu par le frontend et le
-# cahier des charges) même si la colonne en base s'appelle "numero".
-
-def colis_to_dict(colis: models.Colis) -> dict:
-
-    return {
-        "id": colis.id,
-        "numero_suivi": colis.numero,
-        "client": colis.client,
-        "telephone": colis.telephone,
-        "produit": colis.produit,
-        "poids": colis.poids,
-        "destination": colis.destination,
-        "statut": colis.statut,
-    }
 
 
 
@@ -135,32 +115,20 @@ def ajouter_colis(
     statut = colis.statut if colis.statut else STATUT_PAR_DEFAUT
 
     nouveau_colis = models.Colis(
-
-        numero=numero,
-
+        numero_suivi=numero,
         client=colis.client,
-
         telephone=colis.telephone,
-
         produit=colis.produit,
-
         poids=colis.poids,
-
         destination=colis.destination,
-
-        statut=statut
-
+        statut=statut,
     )
 
-
     db.add(nouveau_colis)
-
     db.commit()
-
     db.refresh(nouveau_colis)
 
-
-    return colis_to_dict(nouveau_colis)
+    return nouveau_colis
 
 
 
@@ -173,9 +141,7 @@ def liste_colis(
     db: Session = Depends(get_db)
 ):
 
-    colis = db.query(models.Colis).all()
-
-    return [colis_to_dict(c) for c in colis]
+    return db.query(models.Colis).all()
 
 
 
@@ -192,19 +158,16 @@ def suivi_colis(
     numero_nettoye = numero_suivi.strip()
 
     colis = db.query(models.Colis).filter(
-        models.Colis.numero == numero_nettoye
+        models.Colis.numero_suivi == numero_nettoye
     ).first()
 
-
     if not colis:
-
         raise HTTPException(
             status_code=404,
             detail="Colis introuvable"
         )
 
-
-    return colis_to_dict(colis)
+    return colis
 
 
 
@@ -235,11 +198,9 @@ def modifier_statut(
     colis.statut = donnees.statut
 
     db.commit()
-
     db.refresh(colis)
 
-
-    return colis_to_dict(colis)
+    return colis
 
 
 
