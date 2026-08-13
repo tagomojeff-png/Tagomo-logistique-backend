@@ -1,3 +1,6 @@
+from pydantic import BaseModel
+from tyson_ai import ask_tyson_ai
+
 import random
 
 from fastapi import FastAPI, Depends, HTTPException
@@ -267,4 +270,25 @@ def stats_admin(
         "en_transit": en_transit,
         "arrive_cameroun": arrive_cameroun,
         "livre": livre,
+    }
+
+# =========================
+# TYSON AI ASSISTANT
+# =========================
+
+class AIChatRequest(BaseModel):
+    message: str
+    history: list = []
+
+
+@app.post("/ai/chat")
+def assistant_tyson(data: AIChatRequest):
+
+    reponse = ask_tyson_ai(
+        data.message,
+        data.history
+    )
+
+    return {
+        "reply": reponse
     }
